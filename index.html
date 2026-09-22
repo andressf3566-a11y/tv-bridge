@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>TV Bridge</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#09090d;color:#fff;font-family:Arial,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:18px}
+.app{width:min(100%,900px)}h1{text-align:center;margin:0 0 14px}.tv{background:#171722;border:10px solid #292938;border-radius:24px;padding:12px;box-shadow:0 18px 50px #000}.screen{background:#000;aspect-ratio:16/9;border-radius:12px;overflow:hidden;position:relative}iframe,video{width:100%;height:100%;border:0;display:none}.placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#aaa}.placeholder b{display:block;color:#fff;font-size:22px;margin-bottom:8px}.controls{margin-top:16px;background:#171722;border-radius:16px;padding:14px}.row{display:flex;gap:8px;margin-bottom:10px}.row:last-child{margin:0}input{flex:1;min-width:0;background:#0c0c12;color:#fff;border:1px solid #3a3a4b;border-radius:10px;padding:13px;font-size:15px}button{background:#34344a;color:#fff;border:0;border-radius:10px;padding:12px 15px;font-weight:bold}button.primary{background:#6040a8}.status{font-size:13px;color:#aaa;margin-top:8px}@media(max-width:600px){.row{flex-wrap:wrap}button{flex:1}.row input{flex-basis:100%}}
+</style>
+</head>
+<body>
+<main class="app">
+<h1>TV Bridge</h1>
+<section class="tv"><div class="screen">
+<video id="video" controls playsinline></video>
+<iframe id="embed" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
+<div id="placeholder" class="placeholder"><div><b>TV apagada</b>Pega una URL de YouTube, Twitch o vídeo directo.</div></div>
+</div></section>
+<section class="controls">
+<div class="row"><input id="url" type="url" placeholder="Pega aquí la URL de YouTube, Twitch o vídeo directo"><button class="primary" id="play">REPRODUCIR</button></div>
+<div class="row"><button id="stop">DETENER</button><button id="fs">PANTALLA COMPLETA</button></div>
+<div class="status" id="status">Estado: esperando URL</div>
+</section>
+</main>
+<script>
+const video=document.getElementById('video'), embed=document.getElementById('embed'), ph=document.getElementById('placeholder'), url=document.getElementById('url'), status=document.getElementById('status');
+function statusText(s){status.textContent='Estado: '+s}
+function clearPlayers(){video.pause();video.removeAttribute('src');video.load();embed.src='';video.style.display='none';embed.style.display='none';ph.style.display='flex'}
+function youtubeId(u){try{let x=new URL(u);if(x.hostname.includes('youtu.be'))return x.pathname.slice(1);if(x.hostname.includes('youtube.com')){if(x.pathname==='/watch')return x.searchParams.get('v');let m=x.pathname.match(/\/(?:shorts|live|embed)\/([^/?]+)/);return m?m[1]:null}}catch(e){}return null}
+function twitchInfo(u){try{let x=new URL(u);if(!x.hostname.includes('twitch.tv'))return null;let m=x.pathname.match(/^\/([^/]+)\/?$/);if(!m)return null;return m[1]}catch(e){return null}}
+document.getElementById('play').onclick=()=>{
+ const u=url.value.trim(); if(!u){statusText('falta la URL');return}
+ clearPlayers();
+ const yt=youtubeId(u);
+ if(yt){
+   const origin = (location.protocol === 'http:' || location.protocol === 'https:') ? location.origin : '';
+   if(!origin){statusText('YouTube necesita que esta página esté publicada en HTTPS');return}
+   embed.src='https://www.youtube.com/embed/'+encodeURIComponent(yt)+'?autoplay=1&playsinline=1&origin='+encodeURIComponent(origin);
+   embed.style.display='block';ph.style.display='none';statusText('YouTube reproduciendo');
+   window.TVBridge?.send({type:'tv_play',provider:'youtube',id:yt,url:u}); return;
+ }
+ const tw=twitchInfo(u);
+ if(tw){
+   // Twitch exige que su reproductor tenga un dominio válido en "parent".
+   // Esta página debe estar publicada en HTTPS para usar este modo.
+   const parent=location.hostname && location.hostname!=='localhost' ? location.hostname : null;
+   if(!parent){statusText('Twitch necesita que esta página esté publicada en un dominio HTTPS');return}
+   embed.src='https://player.twitch.tv/?channel='+encodeURIComponent(tw)+'&parent='+encodeURIComponent(parent)+'&autoplay=true';
+   embed.style.display='block';ph.style.display='none';statusText('Twitch reproduciendo');
+   window.TVBridge?.send({type:'tv_play',provider:'twitch',channel:tw,url:u}); return;
+ }
+ video.src=u;video.style.display='block';ph.style.display='none';
+ video.play().then(()=>statusText('vídeo directo reproduciendo')).catch(()=>statusText('cargado; pulsa reproducir si el navegador bloqueó el inicio'));
+ window.TVBridge?.send({type:'tv_play',provider:'direct',url:u});
+};
+document.getElementById('stop').onclick=()=>{clearPlayers();statusText('detenido');window.TVBridge?.send({type:'tv_stop'})};
+document.getElementById('fs').onclick=()=>{const p=embed.style.display==='block'?embed:video;(p.requestFullscreen||p.webkitRequestFullscreen)?.call(p)};
+</script>
+</body>
+</html>
